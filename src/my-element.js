@@ -44,11 +44,14 @@ export class MyElement extends LitElement {
     }
 
     .main > * {
-      flex: 1 1 calc(33.333% - 16px);
+      flex: 0 0 auto;
+      width: calc(33.333% - 16px);
       min-width: 250px;
       min-height: 180px;
       box-sizing: border-box;
       position: relative;
+      resize: both;
+      overflow: auto;
     }
 
     .main > *::before {
@@ -142,6 +145,7 @@ export class MyElement extends LitElement {
     this.selectedWidgetId = null;
     this.insertPosition = "left";
     this.pendingWidgetType = null;
+    this.fullWidth = false;
   }
 
   getWidgetsList() {
