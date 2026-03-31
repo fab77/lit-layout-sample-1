@@ -1,0 +1,7 @@
+
+/* Resetta margini del browser */
+body {
+  margin: 0;
+  height: 100vh;            /* il body occupa tutta la finestra */
+  font-family: Arial, sans-serif;
+}

@@ -1,0 +1,21 @@
+{
+  "name": "lit-sample-1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "lit": "^3.0.0"
+  },
+  "devDependencies": {
+    "@web/dev-server": "^0.4.0",
+    "vite": "^8.0.3"
+  }
+}
