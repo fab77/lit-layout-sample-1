@@ -68,6 +68,11 @@ export class MyElement extends LitElement {
       z-index: 100;
     }
 
+    .drag-over {
+      outline: 3px dashed #0984e3;
+      outline-offset: -3px;
+    }
+
     dialog {
       padding: 20px;
       border: 2px solid #2d3436;
@@ -196,6 +201,9 @@ export class MyElement extends LitElement {
       Array.from(main.children).find(w => w.getAttribute("data-widget-id") === this.selectedWidgetId) : 
       null;
 
+    widget.setAttribute("draggable", "true");
+    this.addDragHandlers(widget);
+
     if (!referenceWidget) {
       main.appendChild(widget);
     } else {
@@ -220,6 +228,48 @@ export class MyElement extends LitElement {
 
   addImage() {
     this.openDialog("image");
+  }
+
+  addDragHandlers(widget) {
+    widget.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/plain", widget.getAttribute("data-widget-id"));
+      event.dataTransfer.effectAllowed = "move";
+      widget.style.opacity = "0.5";
+    });
+
+    widget.addEventListener("dragend", () => {
+      widget.style.opacity = "1";
+    });
+
+    widget.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      widget.classList.add("drag-over");
+    });
+
+    widget.addEventListener("dragleave", () => {
+      widget.classList.remove("drag-over");
+    });
+
+    widget.addEventListener("drop", (event) => {
+      event.preventDefault();
+      widget.classList.remove("drag-over");
+
+      const draggedId = event.dataTransfer.getData("text/plain");
+      const draggedEl = this.shadowRoot.querySelector(`[data-widget-id="${draggedId}"]`);
+      if (draggedEl === widget) return;
+
+      const main = this.shadowRoot.querySelector("main");
+      const all = Array.from(main.children);
+      const draggedIndex = all.indexOf(draggedEl);
+      const targetIndex = all.indexOf(widget);
+
+      if (draggedIndex < targetIndex) {
+        widget.after(draggedEl);
+      } else {
+        widget.before(draggedEl);
+      }
+    });
   }
 
   render() {
