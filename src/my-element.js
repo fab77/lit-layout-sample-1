@@ -54,6 +54,18 @@ export class MyElement extends LitElement {
       overflow: auto;
     }
 
+    .main > *[data-widget-size="full-row"] {
+      flex: 0 0 calc(100% - 16px);
+      width: calc(100% - 16px);
+      min-width: 100%;
+    }
+
+    .main > *[data-widget-size="full-column"] {
+      min-height: calc(100% - 40px);
+      width: auto;
+      flex: 0 0 auto;
+    }
+
     .main > *::before {
       content: attr(data-widget-id);
       position: absolute;
@@ -140,6 +152,7 @@ export class MyElement extends LitElement {
     selectedWidgetId: { type: String },
     insertPosition: { type: String },
     pendingWidgetType: { type: String },
+    selectedSize: { type: String },
   };
 
   constructor() {
@@ -150,7 +163,7 @@ export class MyElement extends LitElement {
     this.selectedWidgetId = null;
     this.insertPosition = "left";
     this.pendingWidgetType = null;
-    this.fullWidth = false;
+    this.selectedSize = "normal";
   }
 
   getWidgetsList() {
@@ -163,12 +176,14 @@ export class MyElement extends LitElement {
     this.showDialog = true;
     this.selectedWidgetId = null;
     this.insertPosition = "left";
+    this.selectedSize = "normal";
     this.requestUpdate();
     setTimeout(() => {
       const dialog = this.shadowRoot.querySelector("dialog");
       dialog.showModal();
       dialog.querySelector("#widget-select").value = "";
       dialog.querySelector("#position-select").value = "left";
+      dialog.querySelector("#size-select").value = "normal";
     }, 0);
   }
 
@@ -196,6 +211,7 @@ export class MyElement extends LitElement {
     }
 
     widget.setAttribute("data-widget-id", id);
+    widget.setAttribute("data-widget-size", this.selectedSize || "normal");
 
     const referenceWidget = this.selectedWidgetId ? 
       Array.from(main.children).find(w => w.getAttribute("data-widget-id") === this.selectedWidgetId) : 
@@ -308,6 +324,15 @@ export class MyElement extends LitElement {
             <select id="position-select" @change=${(e) => this.insertPosition = e.target.value}>
               <option value="left">Left</option>
               <option value="right">Right</option>
+            </select>
+          </div>
+
+          <div class="dialog-group">
+            <label for="size-select">Widget Size:</label>
+            <select id="size-select" @change=${(e) => this.selectedSize = e.target.value}>
+              <option value="normal">Normal</option>
+              <option value="full-row">Full Row</option>
+              <option value="full-column">Full Column</option>
             </select>
           </div>
 
