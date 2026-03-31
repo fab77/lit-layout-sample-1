@@ -4,15 +4,9 @@ export class MyElement extends LitElement {
   static styles = css`
     :host {
       display: flex;
-      flex-direction: column; /* header sopra, main sotto */
+      flex-direction: column;
       height: 100vh;
       border: 2px solid black;
-    }
-    .app {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      background: white;
     }
 
     .header {
@@ -70,46 +64,167 @@ export class MyElement extends LitElement {
       font-weight: bold;
       z-index: 100;
     }
+
+    dialog {
+      padding: 20px;
+      border: 2px solid #2d3436;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      min-width: 400px;
+    }
+
+    dialog[open] {
+      display: block;
+    }
+
+    dialog::backdrop {
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+
+    .dialog-content {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .dialog-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .dialog-group label {
+      font-weight: bold;
+      color: #2d3436;
+    }
+
+    .dialog-group select {
+      padding: 8px;
+      border: 1px solid #bdc3c7;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .dialog-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 10px;
+    }
+
+    .dialog-buttons button {
+      padding: 8px 16px;
+    }
+
+    .dialog-buttons button:last-child {
+      background-color: #27ae60;
+    }
+
+    .dialog-buttons button:last-child:hover {
+      background-color: #229954;
+    }
   `;
 
   static properties = {
     name: { type: String },
     widgetCount: { type: Number },
+    showDialog: { type: Boolean },
+    selectedWidgetId: { type: String },
+    insertPosition: { type: String },
+    pendingWidgetType: { type: String },
   };
 
   constructor() {
     super();
     this.name = "World";
     this.widgetCount = 0;
+    this.showDialog = false;
+    this.selectedWidgetId = null;
+    this.insertPosition = "left";
+    this.pendingWidgetType = null;
+  }
+
+  getWidgetsList() {
+    const main = this.shadowRoot?.querySelector("main");
+    return main ? Array.from(main.children) : [];
+  }
+
+  openDialog(type) {
+    this.pendingWidgetType = type;
+    this.showDialog = true;
+    this.selectedWidgetId = null;
+    this.insertPosition = "left";
+    this.requestUpdate();
+    setTimeout(() => {
+      const dialog = this.shadowRoot.querySelector("dialog");
+      dialog.showModal();
+      dialog.querySelector("#widget-select").value = "";
+      dialog.querySelector("#position-select").value = "left";
+    }, 0);
+  }
+
+  closeDialog() {
+    this.showDialog = false;
+    this.shadowRoot.querySelector("dialog").close();
+  }
+
+  confirmAddWidget() {
+    const main = this.shadowRoot.querySelector("main");
+    const id = `widget-${++this.widgetCount}`;
+    let widget;
+
+    if (this.pendingWidgetType === "table") {
+      widget = document.createElement("table-wc");
+      widget.setAttribute("data-widget-type", "table");
+    } else if (this.pendingWidgetType === "map") {
+      widget = document.createElement("map-wc");
+      widget.setAttribute("data-widget-type", "map");
+    } else if (this.pendingWidgetType === "image") {
+      widget = document.createElement("image-wc");
+      widget.src = "https://via.placeholder.com/300";
+      widget.alt = "Dynamic Image";
+      widget.setAttribute("data-widget-type", "image");
+    }
+
+    widget.setAttribute("data-widget-id", id);
+
+    const referenceWidget = this.selectedWidgetId ? 
+      Array.from(main.children).find(w => w.getAttribute("data-widget-id") === this.selectedWidgetId) : 
+      null;
+
+    if (!referenceWidget) {
+      main.appendChild(widget);
+    } else {
+      const position = this.insertPosition;
+      if (position === "left") {
+        referenceWidget.before(widget);
+      } else if (position === "right") {
+        referenceWidget.after(widget);
+      }
+    }
+
+    this.closeDialog();
   }
 
   addTable() {
-    const id = `widget-${++this.widgetCount}`;
-    const table = document.createElement("table-wc");
-    table.setAttribute("data-widget-id", id);
-    table.setAttribute("data-widget-type", "table");
-    this.shadowRoot.querySelector("main").appendChild(table);
+    this.openDialog("table");
   }
 
   addMap() {
-    const id = `widget-${++this.widgetCount}`;
-    const map = document.createElement("map-wc");
-    map.setAttribute("data-widget-id", id);
-    map.setAttribute("data-widget-type", "map");
-    this.shadowRoot.querySelector("main").appendChild(map);
+    this.openDialog("map");
   }
 
   addImage() {
-    const id = `widget-${++this.widgetCount}`;
-    const image = document.createElement("image-wc");
-    image.src = "https://via.placeholder.com/300";
-    image.alt = "Dynamic Image";
-    image.setAttribute("data-widget-id", id);
-    image.setAttribute("data-widget-type", "image");
-    this.shadowRoot.querySelector("main").appendChild(image);
+    this.openDialog("image");
   }
 
   render() {
+    const widgets = this.getWidgetsList();
+    const widgetOptions = widgets.map(w => ({
+      id: w.getAttribute("data-widget-id"),
+      type: w.getAttribute("data-widget-type")
+    }));
+
     return html`
       <header class="header">
         <div class="add-buttons">
@@ -121,6 +236,33 @@ export class MyElement extends LitElement {
       <main class="main">
         <!-- Components will be added directly here -->
       </main>
+
+      <dialog>
+        <div class="dialog-content">
+          <h2>Add ${this.pendingWidgetType?.charAt(0).toUpperCase() + this.pendingWidgetType?.slice(1)}</h2>
+          
+          <div class="dialog-group">
+            <label for="widget-select">Position Reference:</label>
+            <select id="widget-select" value=${this.selectedWidgetId || ""} @change=${(e) => this.selectedWidgetId = e.target.value || null}>
+              <option value="">At the end (default)</option>
+              ${widgetOptions.map(w => html`<option value="${w.id}">${w.id} (${w.type})</option>`)}
+            </select>
+          </div>
+
+          <div class="dialog-group">
+            <label for="position-select">Insert Position:</label>
+            <select id="position-select" @change=${(e) => this.insertPosition = e.target.value}>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+          </div>
+
+          <div class="dialog-buttons">
+            <button @click=${() => this.closeDialog()}>Cancel</button>
+            <button @click=${() => this.confirmAddWidget()}>Add</button>
+          </div>
+        </div>
+      </dialog>
     `;
   }
 }
