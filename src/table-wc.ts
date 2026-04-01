@@ -11,6 +11,13 @@ type RowsPayload = {
   rowIndexes: number[];
 };
 
+type ProxyEvent = {
+  eventType?: string;
+  targetId?: string;
+  datasetId?: string;
+  rowIndex?: number;
+};
+
 type SentDataset = {
   targetId: string;
   datasetId: string;
@@ -35,6 +42,19 @@ export class TableWC extends LitElement {
     th {
       background-color: #f2f2f2;
     }
+    tr.highlight-row {
+      background-color: #fff5cc;
+      transition: background-color 0.2s ease-in-out;
+    }
+    .dataset-chip {
+      background: none;
+      border: none;
+      color: #0b57d0;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+      margin-right: 8px;
+    }
   `;
 
   static properties = {
@@ -46,6 +66,7 @@ export class TableWC extends LitElement {
     sendTargetId: { type: String },
     datasetIdInput: { type: String },
     sentDatasets: { type: Array },
+    highlightedRowIndex: { type: Number },
     links: { type: Object }, // Set
   };
 
@@ -59,11 +80,15 @@ export class TableWC extends LitElement {
   sendTargetId = '';
   datasetIdInput = '';
   sentDatasets: SentDataset[] = [];
+  highlightedRowIndex = -1;
+  _highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  _proxyHandler = (event: ProxyEvent) => this.handleProxyEvent(event);
 
   connectedCallback() {
     super.connectedCallback();
     if (this.widgetId) {
       widgetsProxy.register(this.widgetId, this);
+      widgetsProxy.on(this.widgetId, this._proxyHandler);
       this.links = new Set(widgetsProxy.getLinkedTargets(this.widgetId));
     }
   }
@@ -71,7 +96,11 @@ export class TableWC extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.widgetId) {
+      widgetsProxy.off(this.widgetId, this._proxyHandler);
       widgetsProxy.unregister(this.widgetId);
+    }
+    if (this._highlightTimer) {
+      clearTimeout(this._highlightTimer);
     }
   }
 
@@ -96,10 +125,31 @@ export class TableWC extends LitElement {
     this.datasetIdInput = (e.target as HTMLInputElement).value;
   }
 
+  selectExistingDataset(targetId: string, datasetId: string): void {
+    if (targetId === 'none' || datasetId === 'none') {
+      this.datasetIdInput = '';
+      this.checkedRows = this.data.map(() => false);
+      return;
+    }
+
+    const selectedTargetId = targetId.trim();
+    if (!selectedTargetId) return;
+
+    const dataset = this.sentDatasets.find(
+      entry => entry.targetId === selectedTargetId && entry.datasetId === datasetId,
+    );
+    if (!dataset) return;
+
+    this.sendTargetId = selectedTargetId;
+    this.datasetIdInput = datasetId;
+    this.checkedRows = this.data.map((_, index) => dataset.rowIndexes.includes(index));
+  }
+
   updated(changedProperties: PropertyValues<this>) {
     if (changedProperties.has('widgetId')) {
       if (this.widgetId) {
         widgetsProxy.register(this.widgetId, this);
+        widgetsProxy.on(this.widgetId, this._proxyHandler);
         this.links = new Set(widgetsProxy.getLinkedTargets(this.widgetId));
         if (!this.links.has(this.sendTargetId)) {
           this.sendTargetId = '';
@@ -113,11 +163,66 @@ export class TableWC extends LitElement {
     }
   }
 
+  handleProxyEvent(event: ProxyEvent): void {
+    if (event.eventType === 'focus-row' && typeof event.rowIndex === 'number') {
+      this.focusAndHighlightRow(event.rowIndex);
+      return;
+    }
+
+    if (
+      event.eventType === 'dataset-row-removed'
+      && event.targetId
+      && event.datasetId
+      && typeof event.rowIndex === 'number'
+    ) {
+      this.removeRowFromDataset(event.targetId, event.datasetId, event.rowIndex);
+    }
+  }
+
+  removeRowFromDataset(targetId: string, datasetId: string, rowIndex: number): void {
+    const next = this.sentDatasets
+      .map(dataset => {
+        if (dataset.targetId !== targetId || dataset.datasetId !== datasetId) {
+          return dataset;
+        }
+        return {
+          ...dataset,
+          rowIndexes: dataset.rowIndexes.filter(index => index !== rowIndex),
+        };
+      })
+      .filter(dataset => dataset.rowIndexes.length > 0);
+
+    this.sentDatasets = next;
+    this.rebuildShownIntoWidgetByRow();
+  }
+
+  async focusAndHighlightRow(rowIndex: number): Promise<void> {
+    this.highlightedRowIndex = rowIndex;
+    this.requestUpdate();
+    await this.updateComplete;
+    const row = this.shadowRoot?.querySelector(`tr[data-row-index="${rowIndex}"]`) as HTMLTableRowElement | null;
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (this._highlightTimer) {
+      clearTimeout(this._highlightTimer);
+    }
+    this._highlightTimer = setTimeout(() => {
+      this.highlightedRowIndex = -1;
+      this.requestUpdate();
+    }, 2000);
+  }
+
   onRowCheckChange(index: number, e: Event): void {
     const input = e.target as HTMLInputElement;
     const next = [...this.checkedRows];
     next[index] = input.checked;
     this.checkedRows = next;
+  }
+
+  onToggleAllRows(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    this.checkedRows = this.data.map(() => input.checked);
   }
 
   rebuildShownIntoWidgetByRow(): void {
@@ -207,10 +312,14 @@ export class TableWC extends LitElement {
 
   render() {
     const hasSelectedRows = this.checkedRows.some(Boolean);
+    const allRowsSelected = this.data.length > 0 && this.checkedRows.every(Boolean);
+    const someRowsSelected = this.checkedRows.some(Boolean) && !allRowsSelected;
     const hasDatasetId = this.datasetIdInput.trim().length > 0;
-    const selectedTargetDatasetIds = this.sentDatasets
-      .filter(dataset => dataset.targetId === this.sendTargetId)
-      .map(dataset => dataset.datasetId);
+    const existingDatasets = this.sentDatasets.map(dataset => ({
+      targetId: dataset.targetId,
+      datasetId: dataset.datasetId,
+      label: `${dataset.targetId} : ${dataset.datasetId}`,
+    }));
 
     return html`
       <p>This is TableWC (${this.widgetId})</p>
@@ -237,19 +346,43 @@ export class TableWC extends LitElement {
         <button @click=${this.sendSelectedRows} ?disabled=${!this.sendTargetId || !hasSelectedRows || !hasDatasetId}>Send/Update dataset</button>
         <button @click=${this.removeDataset} ?disabled=${!this.sendTargetId || !hasDatasetId}>Remove dataset</button>
       </div>
-      <p>Existing dataset IDs for target: ${selectedTargetDatasetIds.join(', ') || '-'}</p>
+      <p>
+        Existing dataset IDs:
+        <button type="button" class="dataset-chip" @click=${() => this.selectExistingDataset('none', 'none')}>
+          none
+        </button>
+        ${existingDatasets.length > 0
+          ? existingDatasets.map(dataset => html`
+              <button
+                type="button"
+                class="dataset-chip"
+                @click=${() => this.selectExistingDataset(dataset.targetId, dataset.datasetId)}
+              >
+                ${dataset.label}
+              </button>
+            `)
+          : html` - `}
+      </p>
       <p>Linked to: ${Array.from(this.links).join(', ')}</p>
       <table>
         <thead>
           <tr>
-            <th>Select</th>
+            <th>
+              Select
+              <input
+                type="checkbox"
+                ?checked=${allRowsSelected}
+                .indeterminate=${someRowsSelected}
+                @change=${this.onToggleAllRows}
+              />
+            </th>
             ${this.headers.map(header => html`<th>${header}</th>`)}
             <th>Shown into widget</th>
           </tr>
         </thead>
         <tbody>
           ${this.data.map((row, index) => html`
-            <tr>
+            <tr data-row-index=${index} class=${this.highlightedRowIndex === index ? 'highlight-row' : ''}>
               <td>
                 <input
                   type="checkbox"

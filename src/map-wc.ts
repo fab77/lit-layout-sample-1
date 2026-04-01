@@ -13,6 +13,7 @@ type RowsPayload = {
 type ReceivedRow = {
   sourceId: string;
   datasetId: string;
+  rowIndex: number;
   row: string[];
 };
 
@@ -50,6 +51,17 @@ export class MapWC extends LitElement {
     th {
       background: #f5f5f5;
     }
+    dialog {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .dialog-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
   `;
 
   static properties = {
@@ -59,6 +71,7 @@ export class MapWC extends LitElement {
     linkedFrom: { type: Object }, // Set
     receivedHeaders: { type: Array },
     receivedHistory: { type: Array },
+    contextRow: { type: Object },
   };
 
   widgetId!: string;
@@ -67,6 +80,7 @@ export class MapWC extends LitElement {
   linkedFrom: Set<string> = new Set();
   receivedHeaders: string[] = [];
   receivedHistory: ReceivedRow[] = [];
+  contextRow: ReceivedRow | null = null;
   _proxyHandler = (event: ProxyEvent) => this.handleProxyEvent(event);
 
   connectedCallback() {
@@ -100,9 +114,10 @@ export class MapWC extends LitElement {
     const withoutDataset = this.receivedHistory.filter(
       entry => `${entry.sourceId}::${entry.datasetId}` !== datasetKey,
     );
-    const nextDatasetRows = payload.rows.map(row => ({
+    const nextDatasetRows = payload.rows.map((row, index) => ({
       sourceId: payload.sourceId,
       datasetId: payload.datasetId,
+      rowIndex: payload.rowIndexes[index] ?? -1,
       row: [...row],
     }));
     this.receivedHistory = [...withoutDataset, ...nextDatasetRows];
@@ -134,6 +149,52 @@ export class MapWC extends LitElement {
     }
   }
 
+  onRowContextMenu(e: MouseEvent, entry: ReceivedRow): void {
+    e.preventDefault();
+    this.contextRow = entry;
+    const dialog = this.shadowRoot?.querySelector('#row-actions-dialog') as HTMLDialogElement | null;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
+  }
+
+  closeRowActionsDialog(): void {
+    const dialog = this.shadowRoot?.querySelector('#row-actions-dialog') as HTMLDialogElement | null;
+    if (dialog?.open) {
+      dialog.close();
+    }
+  }
+
+  removeFromCurrentDataset(): void {
+    if (!this.contextRow) return;
+    const current = this.contextRow;
+    this.receivedHistory = this.receivedHistory.filter(
+      entry => !(
+        entry.sourceId === current.sourceId
+        && entry.datasetId === current.datasetId
+        && entry.rowIndex === current.rowIndex
+      ),
+    );
+
+    if (current.rowIndex >= 0 && this.widgetId) {
+      widgetsProxy.emit(current.sourceId, 'dataset-row-removed', {
+        targetId: this.widgetId,
+        datasetId: current.datasetId,
+        rowIndex: current.rowIndex,
+      });
+    }
+    this.closeRowActionsDialog();
+  }
+
+  showOnSourceTable(): void {
+    if (!this.contextRow || this.contextRow.rowIndex < 0) return;
+    widgetsProxy.emit(this.contextRow.sourceId, 'focus-row', {
+      datasetId: this.contextRow.datasetId,
+      rowIndex: this.contextRow.rowIndex,
+    });
+    this.closeRowActionsDialog();
+  }
+
   render() {
     return html`
       <div class="map">
@@ -151,7 +212,7 @@ export class MapWC extends LitElement {
         <tbody>
           ${this.receivedHistory.length > 0
             ? this.receivedHistory.map(entry => html`
-                <tr>
+                <tr @contextmenu=${(e: MouseEvent) => this.onRowContextMenu(e, entry)}>
                   <td>${entry.sourceId}</td>
                   <td>${entry.datasetId}</td>
                   ${entry.row.map(cell => html`<td>${cell}</td>`)}
@@ -164,6 +225,15 @@ export class MapWC extends LitElement {
               `}
         </tbody>
       </table>
+      <dialog id="row-actions-dialog">
+        <p>Dataset row actions</p>
+        ${this.contextRow ? html`<p>Source: ${this.contextRow.sourceId}, Dataset: ${this.contextRow.datasetId}</p>` : ''}
+        <div class="dialog-actions">
+          <button @click=${this.removeFromCurrentDataset}>1. Remove from current dataset</button>
+          <button @click=${this.showOnSourceTable}>2. Show on source table</button>
+          <button @click=${this.closeRowActionsDialog}>Close</button>
+        </div>
+      </dialog>
     `;
   }
 }
