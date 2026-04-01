@@ -67,6 +67,26 @@ export class WidgetsProxy {
     return true;
   }
 
+  unlink(sourceId: string, targetId: string): boolean {
+    if (!sourceId || !targetId) return false;
+
+    const sourceTargets = this.links.get(sourceId);
+    const targetSources = this.reverseLinks.get(targetId);
+    if (!sourceTargets || !targetSources) return false;
+    if (!sourceTargets.has(targetId) || !targetSources.has(sourceId)) return false;
+
+    sourceTargets.delete(targetId);
+    targetSources.delete(sourceId);
+
+    if (sourceTargets.size === 0) {
+      this.links.delete(sourceId);
+    }
+    if (targetSources.size === 0) {
+      this.reverseLinks.delete(targetId);
+    }
+    return true;
+  }
+
   getLinkedTargets(sourceId: string): string[] {
     return this.links.has(sourceId) ? Array.from(this.links.get(sourceId)!) : [];
   }
