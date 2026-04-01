@@ -115,17 +115,17 @@ export class TableWC extends LitElement {
     const selectedTargetId = (select?.value ?? this.sendTargetId).trim();
     if (!selectedTargetId || !this.links.has(selectedTargetId)) return;
 
-    const rowIndexes = this.checkedRows
+    const selectedRowIndexes = this.checkedRows
       .map((isChecked, index) => (isChecked ? index : -1))
       .filter(index => index !== -1);
-    if (rowIndexes.length === 0) return;
+    if (selectedRowIndexes.length === 0) return;
 
-    const rows = rowIndexes.map(index => this.data[index]);
+    const selectedRows = selectedRowIndexes.map(index => this.data[index]);
     const payload: RowsPayload = {
       sourceId: this.widgetId,
       headers: [...this.headers],
-      rows,
-      rowIndexes,
+      rows: selectedRows,
+      rowIndexes: selectedRowIndexes,
     };
 
     this.sendTargetId = selectedTargetId;
@@ -143,7 +143,7 @@ export class TableWC extends LitElement {
     widgetsProxy.emit(selectedTargetId, 'rows-selected', payload);
 
     const nextShownIntoWidgetByRow = [...this.shownIntoWidgetByRow];
-    for (const index of rowIndexes) {
+    for (const index of selectedRowIndexes) {
       const existing = nextShownIntoWidgetByRow[index] || '';
       const existingIds = existing
         .split(',')
