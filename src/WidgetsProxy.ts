@@ -90,6 +90,10 @@ export class WidgetsProxy {
   hasWidget(widgetId: string): boolean {
     return this.registry.has(widgetId);
   }
+
+  getWidget(widgetId: string): unknown {
+    return this.registry.get(widgetId);
+  }
 }
 
 export const widgetsProxy = WidgetsProxy.getInstance();
