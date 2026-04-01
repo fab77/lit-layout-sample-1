@@ -1,5 +1,7 @@
 import { LitElement, html, css } from "lit";
 
+type WidgetHostElement = HTMLElement & { widgetId?: string };
+
 export class MyElement extends LitElement {
   static styles = css`
     :host {
@@ -155,23 +157,20 @@ export class MyElement extends LitElement {
     selectedSize: { type: String },
   };
 
-  constructor() {
-    super();
-    this.name = "World";
-    this.widgetCount = 0;
-    this.showDialog = false;
-    this.selectedWidgetId = null;
-    this.insertPosition = "left";
-    this.pendingWidgetType = null;
-    this.selectedSize = "normal";
-  }
+  name!: string;
+  widgetCount: number = 0;
+  showDialog!: boolean;
+  selectedWidgetId!: string | null;
+  insertPosition!: string;
+  pendingWidgetType!: string | null;
+  selectedSize!: string;
 
-  getWidgetsList() {
+  getWidgetsList(): HTMLElement[] {
     const main = this.shadowRoot?.querySelector("main");
-    return main ? Array.from(main.children) : [];
+    return main ? Array.from(main.children) as HTMLElement[] : [];
   }
 
-  openDialog(type) {
+  openDialog(type: string): void {
     this.pendingWidgetType = type;
     this.showDialog = true;
     this.selectedWidgetId = null;
@@ -179,23 +178,25 @@ export class MyElement extends LitElement {
     this.selectedSize = "normal";
     this.requestUpdate();
     setTimeout(() => {
-      const dialog = this.shadowRoot.querySelector("dialog");
+      const dialog = this.shadowRoot!.querySelector("dialog") as HTMLDialogElement;
       dialog.showModal();
-      dialog.querySelector("#widget-select").value = "";
-      dialog.querySelector("#position-select").value = "left";
-      dialog.querySelector("#size-select").value = "normal";
+      (dialog.querySelector("#widget-select") as HTMLSelectElement).value = "";
+      (dialog.querySelector("#position-select") as HTMLSelectElement).value = "left";
+      (dialog.querySelector("#size-select") as HTMLSelectElement).value = "normal";
     }, 0);
   }
 
-  closeDialog() {
+  closeDialog(): void {
     this.showDialog = false;
-    this.shadowRoot.querySelector("dialog").close();
+    (this.shadowRoot!.querySelector("dialog") as HTMLDialogElement).close();
   }
 
-  confirmAddWidget() {
+  confirmAddWidget(): void {
+    if (!this.pendingWidgetType) return;
+    if (!this.shadowRoot) return;
     const main = this.shadowRoot.querySelector("main");
     const id = `widget-${++this.widgetCount}`;
-    let widget;
+    let widget: WidgetHostElement | null = null;
 
     if (this.pendingWidgetType === "table") {
       widget = document.createElement("table-wc");
@@ -205,13 +206,17 @@ export class MyElement extends LitElement {
       widget.setAttribute("data-widget-type", "map");
     } else if (this.pendingWidgetType === "image") {
       widget = document.createElement("image-wc");
-      widget.src = "https://via.placeholder.com/300";
-      widget.alt = "Dynamic Image";
+      widget.setAttribute("src", "https://via.placeholder.com/300");
+      widget.setAttribute("alt", "Dynamic Image");
       widget.setAttribute("data-widget-type", "image");
     }
+    if (!widget || !main) return;
 
     widget.setAttribute("data-widget-id", id);
     widget.setAttribute("data-widget-size", this.selectedSize || "normal");
+    if ("widgetId" in widget) {
+      widget.widgetId = id;
+    }
 
     const referenceWidget = this.selectedWidgetId ? 
       Array.from(main.children).find(w => w.getAttribute("data-widget-id") === this.selectedWidgetId) : 
@@ -234,21 +239,22 @@ export class MyElement extends LitElement {
     this.closeDialog();
   }
 
-  addTable() {
+  addTable(): void {
     this.openDialog("table");
   }
 
-  addMap() {
+  addMap(): void {
     this.openDialog("map");
   }
 
-  addImage() {
+  addImage(): void {
     this.openDialog("image");
   }
 
-  addDragHandlers(widget) {
-    widget.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/plain", widget.getAttribute("data-widget-id"));
+  addDragHandlers(widget: WidgetHostElement): void {
+    widget.addEventListener("dragstart", (event: DragEvent) => {
+      if (!event.dataTransfer) return;
+      event.dataTransfer.setData("text/plain", widget.getAttribute("data-widget-id") || "");
       event.dataTransfer.effectAllowed = "move";
       widget.style.opacity = "0.5";
     });
@@ -257,8 +263,9 @@ export class MyElement extends LitElement {
       widget.style.opacity = "1";
     });
 
-    widget.addEventListener("dragover", (event) => {
+    widget.addEventListener("dragover", (event: DragEvent) => {
       event.preventDefault();
+      if (!event.dataTransfer) return;
       event.dataTransfer.dropEffect = "move";
       widget.classList.add("drag-over");
     });
@@ -267,15 +274,18 @@ export class MyElement extends LitElement {
       widget.classList.remove("drag-over");
     });
 
-    widget.addEventListener("drop", (event) => {
+    widget.addEventListener("drop", (event: DragEvent) => {
       event.preventDefault();
       widget.classList.remove("drag-over");
+      if (!event.dataTransfer || !this.shadowRoot) return;
 
       const draggedId = event.dataTransfer.getData("text/plain");
       const draggedEl = this.shadowRoot.querySelector(`[data-widget-id="${draggedId}"]`);
+      if (!draggedEl) return;
       if (draggedEl === widget) return;
 
       const main = this.shadowRoot.querySelector("main");
+      if (!main) return;
       const all = Array.from(main.children);
       const draggedIndex = all.indexOf(draggedEl);
       const targetIndex = all.indexOf(widget);
@@ -290,6 +300,9 @@ export class MyElement extends LitElement {
 
   render() {
     const widgets = this.getWidgetsList();
+    const pendingWidgetLabel = this.pendingWidgetType
+      ? this.pendingWidgetType.charAt(0).toUpperCase() + this.pendingWidgetType.slice(1)
+      : "";
     const widgetOptions = widgets.map(w => ({
       id: w.getAttribute("data-widget-id"),
       type: w.getAttribute("data-widget-type")
@@ -309,11 +322,11 @@ export class MyElement extends LitElement {
 
       <dialog>
         <div class="dialog-content">
-          <h2>Add ${this.pendingWidgetType?.charAt(0).toUpperCase() + this.pendingWidgetType?.slice(1)}</h2>
+          <h2>Add ${pendingWidgetLabel}</h2>
           
           <div class="dialog-group">
             <label for="widget-select">Position Reference:</label>
-            <select id="widget-select" value=${this.selectedWidgetId || ""} @change=${(e) => this.selectedWidgetId = e.target.value || null}>
+            <select id="widget-select" value=${this.selectedWidgetId || ""} @change=${(e: Event) => this.selectedWidgetId = (e.target as HTMLSelectElement).value || null}>
               <option value="">At the end (default)</option>
               ${widgetOptions.map(w => html`<option value="${w.id}">${w.id} (${w.type})</option>`)}
             </select>
@@ -321,7 +334,7 @@ export class MyElement extends LitElement {
 
           <div class="dialog-group">
             <label for="position-select">Insert Position:</label>
-            <select id="position-select" @change=${(e) => this.insertPosition = e.target.value}>
+            <select id="position-select" @change=${(e: Event) => this.insertPosition = (e.target as HTMLSelectElement).value}>
               <option value="left">Left</option>
               <option value="right">Right</option>
             </select>
@@ -329,7 +342,7 @@ export class MyElement extends LitElement {
 
           <div class="dialog-group">
             <label for="size-select">Widget Size:</label>
-            <select id="size-select" @change=${(e) => this.selectedSize = e.target.value}>
+            <select id="size-select" @change=${(e: Event) => this.selectedSize = (e.target as HTMLSelectElement).value}>
               <option value="normal">Normal</option>
               <option value="full-row">Full Row</option>
               <option value="full-column">Full Column</option>
