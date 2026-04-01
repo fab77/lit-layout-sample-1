@@ -9,12 +9,6 @@ type RowsPayload = {
   rowIndexes: number[];
 };
 
-type TargetWidget = {
-  receiveTableRows?: (payload: RowsPayload) => void;
-  tableRowsPayload?: RowsPayload;
-  requestUpdate?: () => void;
-};
-
 export class TableWC extends LitElement {
   static styles = css`
     :host {
@@ -130,16 +124,6 @@ export class TableWC extends LitElement {
     };
 
     this.sendTargetId = selectedTargetId;
-
-    const targetWidget = widgetsProxy.getWidget(selectedTargetId) as TargetWidget | undefined;
-    if (targetWidget && typeof targetWidget.receiveTableRows === 'function') {
-      targetWidget.receiveTableRows(payload);
-    } else if (targetWidget) {
-      targetWidget.tableRowsPayload = payload;
-      if (typeof targetWidget.requestUpdate === 'function') {
-        targetWidget.requestUpdate();
-      }
-    }
 
     widgetsProxy.emit(selectedTargetId, 'rows-selected', payload);
 

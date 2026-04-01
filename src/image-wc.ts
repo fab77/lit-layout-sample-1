@@ -1,6 +1,26 @@
 import { LitElement, html, css } from 'lit';
 import { widgetsProxy } from './WidgetsProxy.js';
 
+type RowsPayload = {
+  sourceId: string;
+  headers: string[];
+  rows: string[][];
+  rowIndexes: number[];
+};
+
+type ReceivedRow = {
+  sourceId: string;
+  row: string[];
+};
+
+type ProxyEvent = {
+  eventType?: string;
+  sourceId?: string;
+  headers?: string[];
+  rows?: string[][];
+  rowIndexes?: number[];
+};
+
 export class ImageWC extends LitElement {
   static styles = css`
     :host {
@@ -11,6 +31,19 @@ export class ImageWC extends LitElement {
       max-width: 100%;
       height: auto;
     }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 8px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px;
+      text-align: left;
+    }
+    th {
+      background: #f5f5f5;
+    }
   `;
 
   static properties = {
@@ -18,13 +51,21 @@ export class ImageWC extends LitElement {
     src: { type: String },
     alt: { type: String },
     linkedFrom: { type: Object }, // Set
+    receivedFrom: { type: String },
+    receivedHeaders: { type: Array },
+    receivedRows: { type: Array },
+    receivedHistory: { type: Array },
   };
 
   widgetId!: string;
   src!: string;
   alt!: string;
   linkedFrom: Set<string> = new Set();
-  _proxyHandler = (event: { eventType?: string; sourceId?: string }) => this.handleProxyEvent(event);
+  receivedFrom = '';
+  receivedHeaders: string[] = [];
+  receivedRows: string[][] = [];
+  receivedHistory: ReceivedRow[] = [];
+  _proxyHandler = (event: ProxyEvent) => this.handleProxyEvent(event);
 
   connectedCallback() {
     super.connectedCallback();
@@ -43,9 +84,29 @@ export class ImageWC extends LitElement {
     }
   }
 
-  handleProxyEvent(event: { eventType?: string; sourceId?: string }): void {
+  receiveTableRows(payload: RowsPayload): void {
+    this.receivedFrom = payload.sourceId;
+    this.receivedHeaders = [...payload.headers];
+    this.receivedRows = payload.rows.map(row => [...row]);
+    this.receivedHistory = [
+      ...this.receivedHistory,
+      ...payload.rows.map(row => ({ sourceId: payload.sourceId, row: [...row] })),
+    ];
+  }
+
+  handleProxyEvent(event: ProxyEvent): void {
     if (event.eventType === 'link' && event.sourceId) {
       this.linkedFrom.add(event.sourceId);
+      this.requestUpdate();
+    }
+
+    if (event.eventType === 'rows-selected' && event.sourceId && Array.isArray(event.rows) && Array.isArray(event.headers)) {
+      this.receiveTableRows({
+        sourceId: event.sourceId,
+        headers: event.headers,
+        rows: event.rows,
+        rowIndexes: Array.isArray(event.rowIndexes) ? event.rowIndexes : [],
+      });
       this.requestUpdate();
     }
   }
@@ -55,6 +116,28 @@ export class ImageWC extends LitElement {
       <p>This is ImageWC (${this.widgetId})</p>
       <img src="${this.src}" alt="${this.alt}" />
       <p>Linked from: ${Array.from(this.linkedFrom).join(', ')}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Source widget</th>
+            ${this.receivedHeaders.map(header => html`<th>${header}</th>`)}
+          </tr>
+        </thead>
+        <tbody>
+          ${this.receivedHistory.length > 0
+            ? this.receivedHistory.map(entry => html`
+                <tr>
+                  <td>${entry.sourceId}</td>
+                  ${entry.row.map(cell => html`<td>${cell}</td>`)}
+                </tr>
+              `)
+            : html`
+                <tr>
+                  <td colspan=${Math.max(1, this.receivedHeaders.length + 1)}>No data received yet.</td>
+                </tr>
+              `}
+        </tbody>
+      </table>
     `;
   }
 }
