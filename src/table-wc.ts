@@ -4,8 +4,16 @@ import { widgetsProxy } from './WidgetsProxy.js';
 
 type RowsPayload = {
   sourceId: string;
+  datasetId: string;
+  action: 'upsert' | 'remove';
   headers: string[];
   rows: string[][];
+  rowIndexes: number[];
+};
+
+type SentDataset = {
+  targetId: string;
+  datasetId: string;
   rowIndexes: number[];
 };
 
@@ -36,6 +44,8 @@ export class TableWC extends LitElement {
     checkedRows: { type: Array },
     shownIntoWidgetByRow: { type: Array },
     sendTargetId: { type: String },
+    datasetIdInput: { type: String },
+    sentDatasets: { type: Array },
     links: { type: Object }, // Set
   };
 
@@ -47,6 +57,8 @@ export class TableWC extends LitElement {
   links: Set<string> = new Set();
   targetId = '';
   sendTargetId = '';
+  datasetIdInput = '';
+  sentDatasets: SentDataset[] = [];
 
   connectedCallback() {
     super.connectedCallback();
@@ -80,6 +92,10 @@ export class TableWC extends LitElement {
     this.sendTargetId = (e.target as HTMLSelectElement).value;
   }
 
+  onDatasetIdInputChange(e: Event): void {
+    this.datasetIdInput = (e.target as HTMLInputElement).value;
+  }
+
   updated(changedProperties: PropertyValues<this>) {
     if (changedProperties.has('widgetId')) {
       if (this.widgetId) {
@@ -93,7 +109,7 @@ export class TableWC extends LitElement {
 
     if (changedProperties.has('data')) {
       this.checkedRows = this.data.map((_, index) => this.checkedRows[index] ?? false);
-      this.shownIntoWidgetByRow = this.data.map((_, index) => this.shownIntoWidgetByRow[index] ?? '');
+      this.rebuildShownIntoWidgetByRow();
     }
   }
 
@@ -104,11 +120,33 @@ export class TableWC extends LitElement {
     this.checkedRows = next;
   }
 
+  rebuildShownIntoWidgetByRow(): void {
+    const next = this.data.map(() => '');
+
+    for (const dataset of this.sentDatasets) {
+      const label = `${dataset.targetId} (${dataset.datasetId})`;
+      for (const index of dataset.rowIndexes) {
+        if (index < 0 || index >= next.length) continue;
+        const existing = next[index]
+          .split(',')
+          .map(item => item.trim())
+          .filter(Boolean);
+        if (!existing.includes(label)) {
+          existing.push(label);
+        }
+        next[index] = existing.join(', ');
+      }
+    }
+
+    this.shownIntoWidgetByRow = next;
+  }
+
   sendSelectedRows(): void {
     if (!this.widgetId) return;
     const select = this.shadowRoot?.querySelector('#send-target-select') as HTMLSelectElement | null;
     const selectedTargetId = (select?.value ?? this.sendTargetId).trim();
-    if (!selectedTargetId || !this.links.has(selectedTargetId)) return;
+    const datasetId = this.datasetIdInput.trim();
+    if (!selectedTargetId || !this.links.has(selectedTargetId) || !datasetId) return;
 
     const selectedRowIndexes = this.checkedRows
       .map((isChecked, index) => (isChecked ? index : -1))
@@ -118,6 +156,8 @@ export class TableWC extends LitElement {
     const selectedRows = selectedRowIndexes.map(index => this.data[index]);
     const payload: RowsPayload = {
       sourceId: this.widgetId,
+      datasetId,
+      action: 'upsert',
       headers: [...this.headers],
       rows: selectedRows,
       rowIndexes: selectedRowIndexes,
@@ -127,23 +167,50 @@ export class TableWC extends LitElement {
 
     widgetsProxy.emit(selectedTargetId, 'rows-selected', payload);
 
-    const nextShownIntoWidgetByRow = [...this.shownIntoWidgetByRow];
-    for (const index of selectedRowIndexes) {
-      const existing = nextShownIntoWidgetByRow[index] || '';
-      const existingIds = existing
-        .split(',')
-        .map(id => id.trim())
-        .filter(Boolean);
-      if (!existingIds.includes(selectedTargetId)) {
-        existingIds.push(selectedTargetId);
-      }
-      nextShownIntoWidgetByRow[index] = existingIds.join(', ');
+    const datasetIndex = this.sentDatasets.findIndex(
+      dataset => dataset.targetId === selectedTargetId && dataset.datasetId === datasetId,
+    );
+    const nextSentDatasets = [...this.sentDatasets];
+    if (datasetIndex >= 0) {
+      nextSentDatasets[datasetIndex] = {
+        ...nextSentDatasets[datasetIndex],
+        rowIndexes: selectedRowIndexes,
+      };
+    } else {
+      nextSentDatasets.push({ targetId: selectedTargetId, datasetId, rowIndexes: selectedRowIndexes });
     }
-    this.shownIntoWidgetByRow = nextShownIntoWidgetByRow;
+    this.sentDatasets = nextSentDatasets;
+    this.rebuildShownIntoWidgetByRow();
+  }
+
+  removeDataset(): void {
+    if (!this.widgetId) return;
+    const selectedTargetId = this.sendTargetId.trim();
+    const datasetId = this.datasetIdInput.trim();
+    if (!selectedTargetId || !datasetId || !this.links.has(selectedTargetId)) return;
+
+    const payload: RowsPayload = {
+      sourceId: this.widgetId,
+      datasetId,
+      action: 'remove',
+      headers: [...this.headers],
+      rows: [],
+      rowIndexes: [],
+    };
+
+    widgetsProxy.emit(selectedTargetId, 'rows-selected', payload);
+    this.sentDatasets = this.sentDatasets.filter(
+      dataset => !(dataset.targetId === selectedTargetId && dataset.datasetId === datasetId),
+    );
+    this.rebuildShownIntoWidgetByRow();
   }
 
   render() {
     const hasSelectedRows = this.checkedRows.some(Boolean);
+    const hasDatasetId = this.datasetIdInput.trim().length > 0;
+    const selectedTargetDatasetIds = this.sentDatasets
+      .filter(dataset => dataset.targetId === this.sendTargetId)
+      .map(dataset => dataset.datasetId);
 
     return html`
       <p>This is TableWC (${this.widgetId})</p>
@@ -158,8 +225,19 @@ export class TableWC extends LitElement {
           <option value="">Select linked widget</option>
           ${Array.from(this.links).map(linkedId => html`<option value=${linkedId}>${linkedId}</option>`)}
         </select>
-        <button @click=${this.sendSelectedRows} ?disabled=${!this.sendTargetId || !hasSelectedRows}>Send rows</button>
       </div>
+      <div>
+        <label for="dataset-id-input">Dataset ID:</label>
+        <input
+          id="dataset-id-input"
+          .value=${this.datasetIdInput}
+          @input=${this.onDatasetIdInputChange}
+          placeholder="e.g. city-over-30"
+        />
+        <button @click=${this.sendSelectedRows} ?disabled=${!this.sendTargetId || !hasSelectedRows || !hasDatasetId}>Send/Update dataset</button>
+        <button @click=${this.removeDataset} ?disabled=${!this.sendTargetId || !hasDatasetId}>Remove dataset</button>
+      </div>
+      <p>Existing dataset IDs for target: ${selectedTargetDatasetIds.join(', ') || '-'}</p>
       <p>Linked to: ${Array.from(this.links).join(', ')}</p>
       <table>
         <thead>

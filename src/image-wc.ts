@@ -3,6 +3,8 @@ import { widgetsProxy } from './WidgetsProxy.js';
 
 type RowsPayload = {
   sourceId: string;
+  datasetId: string;
+  action: 'upsert' | 'remove';
   headers: string[];
   rows: string[][];
   rowIndexes: number[];
@@ -10,12 +12,15 @@ type RowsPayload = {
 
 type ReceivedRow = {
   sourceId: string;
+  datasetId: string;
   row: string[];
 };
 
 type ProxyEvent = {
   eventType?: string;
   sourceId?: string;
+  datasetId?: string;
+  action?: 'upsert' | 'remove';
   headers?: string[];
   rows?: string[][];
   rowIndexes?: number[];
@@ -51,9 +56,7 @@ export class ImageWC extends LitElement {
     src: { type: String },
     alt: { type: String },
     linkedFrom: { type: Object }, // Set
-    receivedFrom: { type: String },
     receivedHeaders: { type: Array },
-    receivedRows: { type: Array },
     receivedHistory: { type: Array },
   };
 
@@ -61,9 +64,7 @@ export class ImageWC extends LitElement {
   src!: string;
   alt!: string;
   linkedFrom: Set<string> = new Set();
-  receivedFrom = '';
   receivedHeaders: string[] = [];
-  receivedRows: string[][] = [];
   receivedHistory: ReceivedRow[] = [];
   _proxyHandler = (event: ProxyEvent) => this.handleProxyEvent(event);
 
@@ -85,13 +86,25 @@ export class ImageWC extends LitElement {
   }
 
   receiveTableRows(payload: RowsPayload): void {
-    this.receivedFrom = payload.sourceId;
+    const datasetKey = `${payload.sourceId}::${payload.datasetId}`;
+
+    if (payload.action === 'remove') {
+      this.receivedHistory = this.receivedHistory.filter(
+        entry => `${entry.sourceId}::${entry.datasetId}` !== datasetKey,
+      );
+      return;
+    }
+
     this.receivedHeaders = [...payload.headers];
-    this.receivedRows = payload.rows.map(row => [...row]);
-    this.receivedHistory = [
-      ...this.receivedHistory,
-      ...payload.rows.map(row => ({ sourceId: payload.sourceId, row: [...row] })),
-    ];
+    const withoutDataset = this.receivedHistory.filter(
+      entry => `${entry.sourceId}::${entry.datasetId}` !== datasetKey,
+    );
+    const nextDatasetRows = payload.rows.map(row => ({
+      sourceId: payload.sourceId,
+      datasetId: payload.datasetId,
+      row: [...row],
+    }));
+    this.receivedHistory = [...withoutDataset, ...nextDatasetRows];
   }
 
   handleProxyEvent(event: ProxyEvent): void {
@@ -100,9 +113,18 @@ export class ImageWC extends LitElement {
       this.requestUpdate();
     }
 
-    if (event.eventType === 'rows-selected' && event.sourceId && Array.isArray(event.rows) && Array.isArray(event.headers)) {
+    if (
+      event.eventType === 'rows-selected'
+      && event.sourceId
+      && event.datasetId
+      && event.action
+      && Array.isArray(event.rows)
+      && Array.isArray(event.headers)
+    ) {
       this.receiveTableRows({
         sourceId: event.sourceId,
+        datasetId: event.datasetId,
+        action: event.action,
         headers: event.headers,
         rows: event.rows,
         rowIndexes: Array.isArray(event.rowIndexes) ? event.rowIndexes : [],
@@ -120,6 +142,7 @@ export class ImageWC extends LitElement {
         <thead>
           <tr>
             <th>Source widget</th>
+            <th>Dataset ID</th>
             ${this.receivedHeaders.map(header => html`<th>${header}</th>`)}
           </tr>
         </thead>
@@ -128,12 +151,13 @@ export class ImageWC extends LitElement {
             ? this.receivedHistory.map(entry => html`
                 <tr>
                   <td>${entry.sourceId}</td>
+                  <td>${entry.datasetId}</td>
                   ${entry.row.map(cell => html`<td>${cell}</td>`)}
                 </tr>
               `)
             : html`
                 <tr>
-                  <td colspan=${Math.max(1, this.receivedHeaders.length + 1)}>No data received yet.</td>
+                  <td colspan=${Math.max(2, this.receivedHeaders.length + 2)}>No data received yet.</td>
                 </tr>
               `}
         </tbody>
