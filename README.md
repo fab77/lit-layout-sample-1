@@ -11,8 +11,8 @@ A simple web application using Lit for web components.
 ## Project Structure
 
 - `index.html`: Main HTML file
-- `src/my-element.ts`: Lit web component
-- `src/table-wc.ts`: Lit web component
-- `src/map-wc.ts`: Lit web component
-- `src/image-wc.ts`: Lit web component
+- `src/MyElement.ts`: Lit web component
+- `src/TableWC.ts`: Lit web component
+- `src/MapWC.ts`: Lit web component
+- `src/ImageWC.ts`: Lit web component
 - `src/WidgetProxy.ts`: Lit web component proxy for linked widgets
