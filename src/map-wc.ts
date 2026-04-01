@@ -24,8 +24,8 @@ export class MapWC extends LitElement {
   widgetId!: string;
   center!: string;
   zoom!: number;
-  linkedFrom!: Set<string>;
-  _proxyHandler!: (event: any) => void;
+  linkedFrom: Set<string> = new Set();
+  _proxyHandler = (event: { eventType?: string; sourceId?: string }) => this.handleProxyEvent(event);
 
   connectedCallback() {
     super.connectedCallback();
@@ -44,8 +44,8 @@ export class MapWC extends LitElement {
     }
   }
 
-  handleProxyEvent(event: any): void {
-    if (event.eventType === 'link') {
+  handleProxyEvent(event: { eventType?: string; sourceId?: string }): void {
+    if (event.eventType === 'link' && event.sourceId) {
       this.linkedFrom.add(event.sourceId);
       this.requestUpdate();
     }

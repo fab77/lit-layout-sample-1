@@ -71,8 +71,9 @@ export class TableWC extends LitElement {
 
   linkTarget(): void {
     if (!this.widgetId || !this.targetId || this.widgetId === this.targetId || !widgetsProxy.hasWidget(this.targetId) || this.links.has(this.targetId)) return;
-    widgetsProxy.link(this.widgetId, this.targetId);
-    widgetsProxy.emit(this.widgetId, 'link', { targetId: this.targetId });
+    const isLinked = widgetsProxy.link(this.widgetId, this.targetId);
+    if (!isLinked) return;
+    widgetsProxy.emit(this.targetId, 'link', { sourceId: this.widgetId });
     this.links.add(this.targetId);
     this.requestUpdate();
   }

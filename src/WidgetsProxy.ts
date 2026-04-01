@@ -43,8 +43,17 @@ export class WidgetsProxy {
     }
   }
 
-  link(sourceId: string, targetId: string): void {
-    if (!sourceId || !targetId || sourceId === targetId) return;
+  link(sourceId: string, targetId: string): boolean {
+    if (!sourceId || !targetId || sourceId === targetId) return false;
+
+    const targetWidget = this.registry.get(targetId) as { tagName?: string } | undefined;
+    const targetTag = targetWidget?.tagName?.toUpperCase();
+    if (targetTag === 'IMAGE-WC') {
+      const existingSources = this.reverseLinks.get(targetId);
+      if (existingSources && !existingSources.has(sourceId) && existingSources.size > 0) {
+        return false;
+      }
+    }
 
     if (!this.links.has(sourceId)) {
       this.links.set(sourceId, new Set());
@@ -55,6 +64,7 @@ export class WidgetsProxy {
 
     this.links.get(sourceId)!.add(targetId);
     this.reverseLinks.get(targetId)!.add(sourceId);
+    return true;
   }
 
   getLinkedTargets(sourceId: string): string[] {
