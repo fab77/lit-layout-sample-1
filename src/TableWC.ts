@@ -98,7 +98,7 @@ export class TableWC extends LitElement {
     super.disconnectedCallback();
     if (this.widgetId) {
       widgetsProxy.off(this.widgetId, this._proxyHandler);
-      widgetsProxy.unregister(this.widgetId);
+      widgetsProxy.unregister(this.widgetId, this);
     }
     if (this._highlightTimer) {
       clearTimeout(this._highlightTimer);

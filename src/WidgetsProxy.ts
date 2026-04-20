@@ -4,12 +4,16 @@ export class WidgetsProxy {
   private links: Map<string, Set<string>>; // sourceId -> Set(targetId)
   private reverseLinks: Map<string, Set<string>>; // targetId -> Set(sourceId)
   private listeners: Map<string, Set<Function>>; // widgetId -> Set(callback)
+  private graphListeners: Set<Function>;
+  private pendingUnregisters: Map<string, number>;
 
   constructor() {
     this.registry = new Map(); // widgetId -> widgetRef
     this.links = new Map(); // sourceId -> Set(targetId)
     this.reverseLinks = new Map(); // targetId -> Set(sourceId)
     this.listeners = new Map(); // widgetId -> Set(callback)
+    this.graphListeners = new Set();
+    this.pendingUnregisters = new Map();
   }
 
   static getInstance() {
@@ -21,26 +25,42 @@ export class WidgetsProxy {
 
   register(widgetId: string, widgetRef: any): void {
     if (!widgetId || !widgetRef) return;
+    this.cancelPendingUnregister(widgetId);
     this.registry.set(widgetId, widgetRef);
+    this.notifyGraphChanged();
   }
 
-  unregister(widgetId: string): void {
+  unregister(widgetId: string, widgetRef?: unknown): void {
     if (!widgetId) return;
-    this.registry.delete(widgetId);
-    this.links.delete(widgetId);
-    this.reverseLinks.delete(widgetId);
-    this.listeners.delete(widgetId);
+    this.cancelPendingUnregister(widgetId);
 
-    for (const [sourceId, targets] of this.links.entries()) {
-      if (targets.has(widgetId)) {
-        targets.delete(widgetId);
+    const timeoutId = window.setTimeout(() => {
+      this.pendingUnregisters.delete(widgetId);
+
+      if (widgetRef && this.registry.get(widgetId) !== widgetRef) {
+        return;
       }
-    }
-    for (const [targetId, sources] of this.reverseLinks.entries()) {
-      if (sources.has(widgetId)) {
-        sources.delete(widgetId);
+
+      this.registry.delete(widgetId);
+      this.links.delete(widgetId);
+      this.reverseLinks.delete(widgetId);
+      this.listeners.delete(widgetId);
+
+      for (const [sourceId, targets] of this.links.entries()) {
+        if (targets.has(widgetId)) {
+          targets.delete(widgetId);
+        }
       }
-    }
+      for (const [targetId, sources] of this.reverseLinks.entries()) {
+        if (sources.has(widgetId)) {
+          sources.delete(widgetId);
+        }
+      }
+
+      this.notifyGraphChanged();
+    }, 0);
+
+    this.pendingUnregisters.set(widgetId, timeoutId);
   }
 
   link(sourceId: string, targetId: string): boolean {
@@ -64,6 +84,7 @@ export class WidgetsProxy {
 
     this.links.get(sourceId)!.add(targetId);
     this.reverseLinks.get(targetId)!.add(sourceId);
+    this.notifyGraphChanged();
     return true;
   }
 
@@ -84,6 +105,7 @@ export class WidgetsProxy {
     if (targetSources.size === 0) {
       this.reverseLinks.delete(targetId);
     }
+    this.notifyGraphChanged();
     return true;
   }
 
@@ -123,6 +145,39 @@ export class WidgetsProxy {
 
   getWidget(widgetId: string): unknown {
     return this.registry.get(widgetId);
+  }
+
+  getAllLinks(): Array<{ sourceId: string; targetId: string }> {
+    const allLinks: Array<{ sourceId: string; targetId: string }> = [];
+    for (const [sourceId, targets] of this.links.entries()) {
+      for (const targetId of targets) {
+        allLinks.push({ sourceId, targetId });
+      }
+    }
+    return allLinks;
+  }
+
+  onGraphChange(callback: Function): void {
+    if (typeof callback !== 'function') return;
+    this.graphListeners.add(callback);
+  }
+
+  offGraphChange(callback: Function): void {
+    this.graphListeners.delete(callback);
+  }
+
+  private notifyGraphChanged(): void {
+    for (const callback of this.graphListeners) {
+      callback();
+    }
+  }
+
+  private cancelPendingUnregister(widgetId: string): void {
+    const timeoutId = this.pendingUnregisters.get(widgetId);
+    if (typeof timeoutId === 'number') {
+      clearTimeout(timeoutId);
+      this.pendingUnregisters.delete(widgetId);
+    }
   }
 }
 

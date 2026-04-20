@@ -96,7 +96,7 @@ export class MapWC extends LitElement {
     super.disconnectedCallback();
     if (this.widgetId) {
       widgetsProxy.off(this.widgetId, this._proxyHandler);
-      widgetsProxy.unregister(this.widgetId);
+      widgetsProxy.unregister(this.widgetId, this);
     }
   }
 
